@@ -190,7 +190,9 @@ def send_email(to: str, subject: str, body: str) -> None:
         # lettre's SmtpTransport::relay implies an implicit TLS connection
         # (STARTTLS / SMTPS depending on port); SMTP_SSL on 465 mirrors
         # that "relay" behavior most closely for Gmail-style providers.
-        with smtplib.SMTP_SSL(smtp_server, 465) as server:
+        with smtplib.SMTP(smtp_server, 587) as server:
+            server.ehlo()
+            server.starttls()
             server.login(smtp_user, smtp_pass)
             server.sendmail(from_addr, [to], msg.as_string())
     except Exception as e:
@@ -234,7 +236,9 @@ def send_html_email(
     msg["Subject"] = subject
 
     try:
-        with smtplib.SMTP_SSL(smtp_server, 465) as server:
+         with smtplib.SMTP(smtp_server, 587) as server:
+            server.ehlo()
+            server.starttls()
             server.login(smtp_user, smtp_pass)
             server.sendmail(from_addr, [to], msg.as_string())
     except Exception as e:
