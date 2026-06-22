@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Nonso Martin | Web Developer & 3D Artist</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Nonso Martin — Full-stack web developer and 3D artist. Skilled in JavaScript, React, Vue, Python, Linux, Three.js, Blender & Figma. Open to collaboration."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      * {
+        font-family: "JetBrains Mono", system-ui, sans-serif;
+        box-sizing: border-box;
+      }
+
+      html {
+        min-height: max(100dvh, 37.5rem);
+        display: grid;
+        place-content: center;
+        overflow-x: hidden;
+        background-color: var(--bg);
+        text-wrap: balance;
+      }
+
+      :root {
+        --app-secondary-color: #222;
+        --link-color: #ffc107;
+        --bg: white;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --app-secondary-color: #fff;
+          --link-color: #34db69;
+          --bg: #222;
+        }
+      }
+
+      body {
+        min-height: inherit;
+        width: min(100dvw, 56.25rem);
+        color: var(--app-secondary-color);
+        padding-inline: 2%;
+      }
+
+      h1,
+      p {
+        margin-block: 1%;
+        text-wrap: balance;
+      }
+      a {
+        color: var(--link-color);
+        &:hover {
+          opacity: 0.6;
+        }
+        &:visited {
+          color: purple;
+        }
+      }
+
+      ul {
+        list-style-type: "=> ";
+      }
+
+      form {
+        height: 22.5rem;
+        width: min(100%, 43.75rem);
+        border: 1px solid rgba(0, 0, 0, 0.422);
+        padding: 2%;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-evenly;
+      }
+
+      @media screen and (width <= 768px) {
+        html {
+          font-size: 14px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>NONSO MARTIN</h1>
+      <p>
+        Senior Frontend developer &amp; 3D artist, blending code, security, and
+        creative design. Open to collaboration, <br />if you just submitted a
+        form Thank you! 🫡, you will receive a response ASAP ⚡️⚡️
+      </p>
+    </header>
+
+    <main>
+      <section id="about">
+        <h2>About</h2>
+        <p>
+          I build interactive web experiences and 3D visuals. My work sits at
+          the intersection of engineering and art, from fast, reliable backends
+          (Python and Nodejs) to expressive frontends (React, Vue, Three.js),
+          and 3D assets made in Blender and edited in Figma.
+        </p>
+        <p>
+          I also have a strong interest in Linux, cybersecurity, automation
+          (n8n), and self-hosting (home servers). I speak English and French,
+          and I’m learning Japanese.
+        </p>
+      </section>
+
+      <section id="skills">
+        <h2>Skills</h2>
+        <ul>
+          <li>Web: HTML, CSS, JavaScript, React, Vue</li>
+          <li>3D & Graphics: Three.js, Blender, Figma</li>
+          <li>Systems & Security: Linux, Cybersecurity</li>
+          <li>Backend & Performance: Python, Express, Node.js, APIs</li>
+          <li>Automation: n8n workflows</li>
+        </ul>
+      </section>
+
+      <section id="projects">
+        <h2>Projects & Interests</h2>
+        <ul>
+          <li>Self-hosted automation with n8n</li>
+          <li>Python-based web services and high-performance APIs</li>
+          <li>Nodejs-based web services and industry standard APIs</li>
+          <li>Interactive 3D web experiences with Three.js</li>
+          <li>Sports posters and digital art</li>
+        </ul>
+      </section>
+
+      <section id="links">
+        <h2>Links</h2>
+        <ul>
+          <li>
+            <a
+              href="https://nox-dev.vercel.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Portfolio website</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://www.linkedin.com/in/nonso0x"
+              target="_blank"
+              rel="noopener noreferrer"
+              >LinkedIn</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://x.com/nonso0X"
+              target="_blank"
+              rel="noopener noreferrer"
+              >X / Twitter</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://github.com/nonso01"
+              target="_blank"
+              rel="noopener noreferrer"
+              >GitHub</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://www.upwork.com/freelancers/~010b982b82d6d28d24?mp_source=share"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Upwork</a
+            >
+          </li>
+        </ul>
+      </section>
+
+      <section id="contact">
+        <h2>Contact</h2>
+        <form
+          method="POST"
+          action="/contact"
+          enctype="multipart/form-data"
+          id="nox-form"
+        >
+          <div>
+            <label for="noxName">Name: </label>
+            <input
+              type="text"
+              name="name"
+              id="noxName"
+              placeholder="your name"
+              required
+              autocomplete="on"
+              maxlength="100"
+              minlength="2"
+            />
+          </div>
+          <div>
+            <label for="noxEmail">Email: </label>
+            <input
+              type="email"
+              name="email"
+              id="noxEmail"
+              placeholder="your@email.todo"
+              required
+              autocomplete="on"
+              maxlength="250"
+            />
+          </div>
+          <div>
+            <label for="noxMessage">Message: </label>
+            <textarea
+              name="message"
+              id="noxMessage"
+              placeholder="what would you like me to do for you ?"
+              autocorrect="on"
+              spellcheck="true"
+              cols="30"
+              wrap="hard"
+              required
+              minlength="2"
+              maxlength="1900"
+            ></textarea>
+          </div>
+          <div>
+            <fieldset form="nox-form">
+              <legend>How can i help</legend>
+
+              <label for="webDevelopment">
+                <input
+                  type="checkbox"
+                  name="webDevelopment"
+                  id="webDevelopment"
+                />
+                <span>Website Development</span>
+              </label>
+              <label for="frontend">
+                <input type="checkbox" name="frontend" id="frontend" />
+                <span>Frontend Task</span>
+              </label>
+              <label for="blender">
+                <input type="checkbox" name="blender" id="blender" />
+                <span>Blender Model</span>
+              </label>
+            </fieldset>
+          </div>
+          <div style="display: grid; place-content: center">
+            <button title="submit" type="submit">Let's Go!</button>
+          </div>
+        </form>
+        <p style="font-size: 0.95rem; text-align: center">
+          Open to freelance work, collaborations, and creative projects. Feel
+          free to reach out.
+        </p>
+        <p style="text-align: center; font-size: 0.85rem">
+          This site is served with pure Python
+          <img
+            src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/python/python-original.svg"
+            alt="Python"
+            width="19"
+            height="19"
+          />
+          and my Android (Termux)
+        </p>
+      </section>
+    </main>
+
+    <footer>
+      <p style="font-size: 0.8rem; text-align: center">
+        &copy; Nonso Martin - <span id="year">{year}</span>
+      </p>
+    </footer>
+    <script>
+      try {
+        // did you know ? you could just select an element from
+        // it's ID :D
+        if (year && year instanceof HTMLElement) {
+          year.textContent = new Date().getUTCFullYear();
+        }
+      } catch (error) {
+        console.log(error);
+      }
+    </script>
+  </body>
+</html>
