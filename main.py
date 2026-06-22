@@ -1345,8 +1345,22 @@ if __name__ == "__main__":
     # this has no equivalent need in the original — it's specific to this
     # port and matters for anyone launching main.py directly (without the
     # `-u` flag the server-manager.sh script already passes).
-    sys.stdout.reconfigure(line_buffering=True)
-    sys.stderr.reconfigure(line_buffering=True)
+    # Ensure line-buffered stdout/stderr. Use reconfigure() when available
+    # (Python 3.7+ TextIOWrapper), otherwise fall back to reopening the
+    # file descriptors with line buffering.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+        sys.stderr.reconfigure(line_buffering=True)
+    except Exception:
+        import os
+        try:
+            sys.stdout = os.fdopen(sys.stdout.fileno(), "w", buffering=1, closefd=False)
+        except Exception:
+            pass
+        try:
+            sys.stderr = os.fdopen(sys.stderr.fileno(), "w", buffering=1, closefd=False)
+        except Exception:
+            pass
 
     try:
         main()
