@@ -27,14 +27,7 @@ def load_dotenv(path: str = ".env") -> None:
     """
     Minimal stdlib-only .env loader.
 
-    main.rs does not load a .env file itself either — std::env::var only
-    reads variables already present in the process environment. Whatever
-    mechanism feeds .env values into the Rust binary on your machine
-    (an IDE launch config, direnv, a shell that sources .env, etc.) sits
-    outside main.rs/lib.rs and isn't something Python inherits for free.
-    This function plays that same external role explicitly, so running
-    `python3 main.py` from a plain terminal behaves the same way.
-
+    
     Rules, matching standard .env convention:
       - Lines starting with '#' or blank lines are skipped.
       - KEY=VALUE pairs are parsed; surrounding whitespace is stripped.
@@ -76,17 +69,14 @@ def load_dotenv(path: str = ".env") -> None:
 @dataclass
 class SecurityConfig:
     """
-    Replica of Rust's SecurityConfig (#[derive(Clone)]).
 
     Python dataclasses are copyable by construction (no special Clone trait
-    needed) — `dataclasses.replace()` is the structural equivalent of
-    Rust's `.clone()` if a copy is ever needed, though this codebase
-    only ever reads from instances after creation (matching Rust's usage).
+    needed) — `dataclasses.replace()` 
     """
 
     max_content_length: int
     max_connections: int
-    connection_timeout: float  # seconds (Rust: Duration)
+    connection_timeout: float  # seconds 
     max_requests_per_hour: int
     enable_rate_limiting: bool
 
@@ -138,15 +128,6 @@ def match_route(method: str, path: str) -> Route:
 # Custom error types for better error handling
 # ---------------------------------------------------------------------------
 class ServerError(Exception):
-    """
-    Base replica of Rust's `enum ServerError`.
-
-    Rust's enum variants (IoError, ParseError, ValidationError, EmailError,
-    ThreadPoolError, NetworkError) are each represented as a Python
-    Exception subclass below. This mirrors Rust's tagged-union error type
-    with Python's native exception hierarchy — `isinstance` checks replace
-    `match`-on-variant, and `str(err)` replaces the `Display` impl.
-    """
 
     def __str__(self) -> str:
         return self._display()
@@ -208,12 +189,6 @@ class NetworkError(ServerError):
     def _display(self) -> str:
         return f"Network error: {self.msg}"
 
-
-# Rust: type ServerResult<T> = Result<T, ServerError>;
-# Python has no Result alias to mirror; ServerError subclasses are raised
-# and caught with try/except instead. Function signatures are annotated
-# with the success type only (-> None, -> int, etc.) and a docstring notes
-# what they raise, which is the idiomatic Python equivalent.
 
 
 # ---------------------------------------------------------------------------
@@ -283,8 +258,6 @@ class CorsConfig:
 # ---------------------------------------------------------------------------
 class Worker:
     """
-    Replica of Rust's Worker.
-
     Rust: thread::spawn(move || loop { receiver.lock().unwrap().recv() ... })
     Python: a daemon-less threading.Thread running the same blocking loop,
     pulling from a shared queue.Queue. queue.Queue is the direct structural
@@ -364,7 +337,7 @@ class ThreadPool:
         self.cors_config = cors_config
         self.security_config = security_config
 
-        # Rate limiter — shared across all workers (Rust: Arc<RateLimiter>)
+        # Rate limiter — shared across all workers 
         self.rate_limiter = RateLimiter(
             security_config.max_requests_per_hour,
             const.WINDOW_LIMIT_MINS,  # 1 hour window
@@ -400,8 +373,7 @@ class ThreadPool:
 
     def shutdown(self) -> None:
         """
-        Replica of Rust's `impl Drop for ThreadPool`.
-
+        Shuts down the thread pool, waiting for all workers to finish.
         Rust's Drop runs automatically when ThreadPool goes out of scope;
         Python has no deterministic destructor equivalent for this kind of
         cleanup (the `__del__` is unreliable and discouraged for resource
@@ -459,7 +431,6 @@ def handle_api_health(
 # ---------------------------------------------------------------------------
 def main() -> None:
     # Load .env into the process environment first, mirroring wherever
-    # your Rust project calls dotenv/dotenvy at the top of fn main().
     load_dotenv()
 
     port = os.environ.get("PORT", "8080")
@@ -482,7 +453,7 @@ def main() -> None:
         print(f"Failed to bind to address {host}:{port}: {e}")
         raise IoError(e)
 
-    print(f"🦀 Server running on http://{host}:{port}")
+    print(f"🖥 Server running on http://{host}:{port}")
 
     print(
         f"🦍 Security enabled - Max content: "
@@ -937,12 +908,7 @@ def validate_form_data(form_data: dict[str, str]) -> None:
         value = form_data.get(constraint.name)
         if value is not None:
             # Check for null bytes and control characters.
-            # NOTE: Python's str.isprintable() is NOT the inverse of Rust's
-            # char::is_control() — isprintable() also flags things like
-            # U+200B (zero-width space) and non-breaking space as
-            # "non-printable", which Rust's is_control() does NOT consider
-            # control characters. unicodedata category 'Cc' is the correct
-            # match for Rust's is_control() (Unicode General Category "Cc").
+          
             has_bad_control_char = any(
                 unicodedata.category(c) == "Cc" and c not in ("\n", "\r", "\t")
                 for c in value
@@ -1086,68 +1052,32 @@ def handle_post_request_secure(
     name = form_data.get("name")
     email = form_data.get("email")
 
-    # Send email ONLY after successful validation
-    if email is not None:
-        email_sent = send_confirmation_email(form_data, email, client_ip)
-    else:
-        email_sent = False
+    # Send notification ONLY after successful validation
+    notified = notify_via_telegram(form_data, client_ip)
 
-    # Send success response
     send_html_response_with_cors_secure(
-        buf_reader,
-        "Success",
-        "Form submitted successfully and confirmation email sent!"
-        if email_sent
-        else "Form submitted successfully!",
-        name,
-        email,
-        cors_config,
-        origin,
-    )
+    buf_reader,
+    "Success",
+    "Form submitted successfully!",
+    name,
+    form_data.get("email"),
+    cors_config,
+    origin,
+)
 
 
-def send_confirmation_email(
+def notify_via_telegram(
     form_data: dict[str, str],
-    email_addr: str,
     client_ip: str,
 ) -> bool:
-    """Helper function for sending confirmation email."""
-    user_name = form_data.get("name", "Dear Friend")
-    user_message = form_data.get("message", "Your form submission")
-
-    subject = "Thank you for contacting me!"
-
-    # Sanitize email content
-    email_addr = nox.sanitize_email_content(email_addr)
-    user_name = nox.sanitize_email_content(user_name)
-    user_message = nox.sanitize_email_content(user_message)
-
-    # Generate HTML email
-    html_body = nox.generate_email_html(user_name, user_message)
-
-    # Fallback plain text version
-    plain_text_body = (
-        f"Hello {user_name},\n\nThank you for your submission! "
-        f"I received your message and will attend to your queries shortly.\n\n"
-        f"Your message: {user_message}\n\nBest regards,\nNonso Martin"
-    )
-
-    # Try to send HTML email with plain text fallback
     try:
-        nox.send_html_email(email_addr, subject, html_body, plain_text_body)
-        print(f"✅ Email sent successfully to {email_addr} from {client_ip}")
+        nox.send_telegram_notification(form_data)
+        print(f"✅ Telegram notification sent for submission from {client_ip}")
         return True
     except Exception as e:
-        print(f"⚠️ Failed to send HTML email to {email_addr} from {client_ip}: {e}")
-
-        # Fallback to plain text
-        try:
-            nox.send_email(email_addr, subject, plain_text_body)
-            print(f"✅ Fallback plain text email sent to {email_addr} from {client_ip}")
-            return True
-        except Exception as e2:
-            print(f"⛔️ Failed to send any email to {email_addr} from {client_ip}: {e2}")
-            return False
+        print(f"⛔️ Failed to send Telegram notification from {client_ip}: {e}")
+        return False
+    
 
 
 def send_html_response_with_cors_secure(
@@ -1341,13 +1271,7 @@ if __name__ == "__main__":
     # Force line-buffered output so log lines appear immediately when
     # stdout is redirected to a file (e.g. `nohup python3 main.py > log &`),
     # instead of sitting in Python's internal buffer until it fills or the
-    # process exits. Rust's println! flushes on every call by default, so
-    # this has no equivalent need in the original — it's specific to this
-    # port and matters for anyone launching main.py directly (without the
-    # `-u` flag the server-manager.sh script already passes).
-    # Ensure line-buffered stdout/stderr. Use reconfigure() when available
-    # (Python 3.7+ TextIOWrapper), otherwise fall back to reopening the
-    # file descriptors with line buffering.
+    # process exits.
     try:
         sys.stdout.reconfigure(line_buffering=True)
         sys.stderr.reconfigure(line_buffering=True)

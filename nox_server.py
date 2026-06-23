@@ -1,5 +1,5 @@
 """
-Direct Python replica of lib.rs (the `nox_server` module).
+(the `nox_server` module).
 
 All essential functions, constants, structs/classes, and helpers,
 mirroring the original Rust module 1:1 in structure and behavior.
@@ -9,13 +9,15 @@ from __future__ import annotations
 
 import os
 import re
-import smtplib
 import socket
 import threading
 import time
 from dataclasses import dataclass, field
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+# from email.mime.multipart import MIMEMultipart
+# from email.mime.text import MIMEText
+import urllib.request
+import urllib.error
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -156,182 +158,59 @@ class HttpResponse:
 
 
 # ---------------------------------------------------------------------------
-# Email sending (lettre -> smtplib/email)
+# Receiving Messages via Telegram Bot API
 # ---------------------------------------------------------------------------
-def send_email(to: str, subject: str, body: str) -> None:
+def send_telegram_notification(form_data: dict[str, str]) -> None:
     """
-    Replica of send_email (plain text).
-
-    Rust returns Result<(), Box<dyn Error>>; Python raises an exception
-    (RuntimeError / smtplib exceptions) on failure instead. Callers
-    (see send_confirmation_email in main.py) catch exceptions where Rust
-    matched on Err(e).
+    Sends form submission details to your personal Telegram inbox
+    via the Bot API — a plain HTTPS POST to api.telegram.org,
     """
-    smtp_user = os.environ.get("MY_EMAIL")
-    if smtp_user is None:
-        print("Warning: MY_EMAIL env was not set")
-        raise RuntimeError("MY_EMAIL environment variable not set")
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
 
-    smtp_pass = os.environ.get("MY_PASSWORD")
-    if smtp_pass is None:
-        print("Warning: MY_PASSWORD env was not set")
-        raise RuntimeError("MY_PASSWORD environment variable not set")
+    if not token or not chat_id:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set")
 
-    smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
-    from_addr = os.environ.get("SMTP_FROM", smtp_user)
+    name = form_data.get("name", "Unknown")
+    email = form_data.get("email", "Unknown")
+    message = form_data.get("message", "")
 
-    msg = MIMEText(body, "plain")
-    msg["From"] = from_addr
-    msg["Reply-To"] = from_addr
-    msg["To"] = to
-    msg["Subject"] = subject
+    # Checkboxes
+    services = [
+        field for field in ["frontend", "webDevelopment", "blender"]
+        if form_data.get(field) == "on"
+    ]
+    services_line = f"🛠 Services: {', '.join(services)}" if services else ""
+
+    text = (
+        f"📬 *New Contact Form Submission*\n\n"
+        f"👤 *Name:* {name}\n"
+        f"📧 *Email:* {email}\n"
+        f"💬 *Message:*\n{message}"
+        + (f"\n\n{services_line}" if services_line else "")
+    )
+
+    payload = json.dumps({
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "Markdown",
+    }).encode()
+
+    req = urllib.request.Request(
+        f"https://api.telegram.org/bot{token}/sendMessage",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
 
     try:
-        # lettre's SmtpTransport::relay implies an implicit TLS connection
-        # (STARTTLS / SMTPS depending on port); SMTP_SSL on 465 mirrors
-        # that "relay" behavior most closely for Gmail-style providers.
-        with smtplib.SMTP(smtp_server, 587) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(smtp_user, smtp_pass)
-            server.sendmail(from_addr, [to], msg.as_string())
-    except Exception as e:
-        print(f"Failed to send email to: {to}")
-        raise e
-
-    print(f"Email sent successfully to: {to}")
-
-
-def send_html_email(
-    to: str,
-    subject: str,
-    html_body: str,
-    text_body: Optional[str] = None,
-) -> None:
-    """Replica of send_html_email — sends multipart/alternative when text_body is given."""
-    smtp_user = os.environ.get("MY_EMAIL")
-    if smtp_user is None:
-        print("Warning: MY_EMAIL env was not set")
-        raise RuntimeError("MY_EMAIL environment variable not set")
-
-    smtp_pass = os.environ.get("MY_PASSWORD")
-    if smtp_pass is None:
-        print("Warning: MY_PASSWORD env was not set")
-        raise RuntimeError("MY_PASSWORD environment variable not set")
-
-    smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
-    from_addr = os.environ.get("SMTP_FROM", smtp_user)
-
-    if text_body is not None:
-        # Rust: MultiPart::alternative().singlepart(text).singlepart(html)
-        msg = MIMEMultipart("alternative")
-        msg.attach(MIMEText(text_body, "plain"))
-        msg.attach(MIMEText(html_body, "html"))
-    else:
-        msg = MIMEText(html_body, "html")
-
-    msg["From"] = from_addr
-    msg["Reply-To"] = from_addr
-    msg["To"] = to
-    msg["Subject"] = subject
-
-    try:
-         with smtplib.SMTP(smtp_server, 587) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(smtp_user, smtp_pass)
-            server.sendmail(from_addr, [to], msg.as_string())
-    except Exception as e:
-        print(f"Failed to send HTML email to: {to}")
-        raise e
-
-    print(f"HTML email sent successfully to: {to}")
-
-
-def generate_email_html(name: str, message: str) -> str:
-    """Helper function to generate HTML email template (verbatim port of the Rust format! template)."""
-    return f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Form Submission Received</title>
-    <style>
-        body {{
-            font-family: system-ui, sans-serif, 'Ariel';
-            line-height: 1.4;
-            color: #222;
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f4f4f4;
-        }}
-        .container {{
-            width: max(350px, 70%);
-            margin: 0 auto;
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            border: 2px solid #2222221c;
-        }}
-        .header {{
-            text-align: center;
-            color: #2c3e50;
-            border-bottom: 2px solid #2222221c;
-            padding-bottom: 20px;
-            margin-bottom: 30px;
-        }}
-        .content {{
-            font-size: 15px;
-            margin-bottom: 30px;
-        }}
-        .highlight {{
-            color: #34db69;
-            font-weight: bold;
-        }}
-        .footer {{
-            text-align: center;
-            text-wrap: balance;
-            color: #7f8c8d;
-            border-top: 1px solid #ecf0f1;
-            padding-top: 20px;
-            margin-top: 30px;
-            font-size: 12px;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🤩 Thank You for Your Submission!</h1>
-        </div>
-
-        <div class="content">
-            <p>Hello <span class="highlight">{name}</span>,</p>
-
-            <p>Thank you for reaching out! I have received your message and will respond to your queries shortly 🫡.</p>
-
-            <p><strong>Your message:</strong></p>
-            <blockquote style="padding: 10px; border-left: 2px solid currentColor; margin: 10px 0; font-style: italic; font-size: 12px;">
-                {message}
-            </blockquote>
-
-            <p>I appreciate you taking the time to contact me, and I'll get back to you as soon as possible ⚡️⚡️⚡️.</p>
-
-            <p>Best regards,<br>
-            <strong>Nonso Martin</strong></p>
-        </div>
-
-        <div class="footer">
-            <p>This is an automated response to confirm we received your form submission.</p>
-            <p>If you didn't initiate this message please ignore.</p>
-        </div>
-    </div>
-</body>
-</html>
-    """
-
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            print(f"Telegram notification sent (status {resp.status})")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode(errors="replace")
+        raise RuntimeError(f"Telegram API error {e.code}: {body}")
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"Telegram request failed: {e.reason}")
 
 # ---------------------------------------------------------------------------
 # Colored text
@@ -377,16 +256,6 @@ def sanitize_path(path: str) -> str:
 
 
 def is_safe_path(path: Path) -> bool:
-    """
-    Replica of Rust's is_safe_path using Path.canonicalize().
-
-    Rust's `canonicalize()` errors (Result::Err) if the path doesn't
-    exist; Python's `Path.resolve(strict=True)` raises OSError/
-    FileNotFoundError in the same circumstance, so it's used to mirror
-    that fallibility instead of the non-strict `resolve()` (which
-    silently succeeds on nonexistent paths and would NOT match Rust's
-    Ok/Err branching below).
-    """
 
     def _dist_path() -> Optional[Path]:
         try:

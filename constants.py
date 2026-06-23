@@ -1,8 +1,5 @@
 """
-Direct Python replica of constants.rs.
-
-Rust uses `pub const` for compile-time constants and a `&[FieldConstraint]`
-(a static slice of structs) for FIELD_CONSTRAINTS. Python has no const
+Python has no const
 enforcement or static slices, so these are module-level bindings — by
 convention (ALL_CAPS) they are treated as constants and must not be
 reassigned anywhere else in the codebase.
@@ -28,13 +25,6 @@ RFC_5321_MAX_DOMAIN_PART_LENGTH: int = 253
 
 @dataclass(frozen=True)
 class FieldConstraint:
-    """
-    Replica of Rust's FieldConstraint struct.
-
-    `frozen=True` mirrors Rust's immutability of `pub const` data —
-    instances cannot be mutated after construction, matching the
-    guarantees the Rust struct gets for free as a `&'static` const slice.
-    """
 
     name: str
     max_length: int
@@ -42,7 +32,6 @@ class FieldConstraint:
     email: bool  # true for email field, enables regex validation
 
 
-# Rust: pub const FIELD_CONSTRAINTS: &[FieldConstraint] = &[ ... ];
 FIELD_CONSTRAINTS: tuple[FieldConstraint, ...] = (
     FieldConstraint(name="name", max_length=40, required=True, email=False),
     FieldConstraint(name="email", max_length=80, required=True, email=True),
