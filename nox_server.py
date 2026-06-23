@@ -6,12 +6,10 @@ path helpers, MIME types, form parsers, and XSS detection.
 
 from __future__ import annotations
 
-# import os
 import socket
 import threading
 import time
 from pathlib import Path
-# from typing import Optional
 
 
 # ---------------------------------------------------------------------------
