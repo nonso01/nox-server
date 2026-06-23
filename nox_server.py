@@ -1,25 +1,17 @@
 """
-(the `nox_server` module).
-
-All essential functions, constants, structs/classes, and helpers,
-mirroring the original Rust module 1:1 in structure and behavior.
+nox_server.py — core utilities for the nox HTTP server.
+Rate limiter, HTTP response builder, Telegram notification,
+path helpers, MIME types, form parsers, and XSS detection.
 """
 
 from __future__ import annotations
 
-import os
-import re
+# import os
 import socket
 import threading
 import time
-from dataclasses import dataclass, field
-# from email.mime.multipart import MIMEMultipart
-# from email.mime.text import MIMEText
-import urllib.request
-import urllib.error
-import json
 from pathlib import Path
-from typing import Optional
+# from typing import Optional
 
 
 # ---------------------------------------------------------------------------
@@ -27,41 +19,34 @@ from typing import Optional
 # ---------------------------------------------------------------------------
 class RateLimiter:
     """
-    Replica of Rust's RateLimiter.
+    Per-IP sliding-window rate limiter, shared across all worker threads.
 
-    Rust:   requests: Arc<Mutex<HashMap<String, Vec<Instant>>>>
-    Python: a plain dict guarded by a threading.Lock — Python dicts aren't
-            thread-safe for compound read-modify-write sequences the way
-            this class performs them, so the lock is mandatory here (in
-            Rust the Mutex was mandatory for the same reason: shared
-            mutable state across threads).
+    Uses a plain dict guarded by a threading.Lock — the lock is mandatory
+    because the read-then-modify sequence on the timestamps list is not
+    atomic, and multiple workers access this concurrently.
 
-    Rust's `Instant` (a monotonic clock) is replicated with
-    `time.monotonic()`, NOT `time.time()`, since monotonic time is immune
-    to system clock adjustments — exactly why Rust's std lib uses Instant
-    over SystemTime for interval measurement.
+    time.monotonic() is used instead of time.time() because monotonic
+    time is immune to system clock adjustments (DST, NTP corrections, etc),
+    which matter for interval measurement.
     """
 
     def __init__(self, max_requests: int, window_minutes: int) -> None:
         self.requests: dict[str, list[float]] = {}
-        self.max_requests: int = max_requests
-        self.window_duration: float = window_minutes * 60  # seconds
+        self.max_requests = max_requests
+        self.window_duration = window_minutes * 60  # convert to seconds
         self._lock = threading.Lock()
 
     def is_allowed(self, client_id: str) -> bool:
         with self._lock:
             now = time.monotonic()
             cutoff = now - self.window_duration
-
-            # Rust: requests.entry(client_id).or_insert_with(Vec::new).retain(...)
             timestamps = self.requests.setdefault(client_id, [])
+            # Drop timestamps outside the current window
             timestamps[:] = [t for t in timestamps if t > cutoff]
-
             if len(timestamps) >= self.max_requests:
                 return False
-            else:
-                timestamps.append(now)
-                return True
+            timestamps.append(now)
+            return True
 
 
 # ---------------------------------------------------------------------------
@@ -69,18 +54,15 @@ class RateLimiter:
 # ---------------------------------------------------------------------------
 class HttpResponse:
     """
-    Replica of Rust's HttpResponse builder struct.
+    Fluent HTTP response builder.
 
-    Rust uses a consuming builder pattern (`mut self -> Self`), each method
-    takes ownership and returns Self. Python has no ownership system, so
-    these builder methods mutate `self` in place and return `self` —
-    behaviorally identical for this use case (no aliasing issue arises
-    because Python callers chain calls the same way Rust callers do).
+    Builder methods mutate and return self so calls can be chained:
+        HttpResponse.ok().json('{"a":1}').send(stream, cors_header)
     """
 
     def __init__(self, status: str) -> None:
-        self.status: str = status
-        self.content_type: str = "text/plain"
+        self.status = status
+        self.content_type = "text/plain"
         self.body: bytes = b""
         self.custom_headers: list[str] = []
 
@@ -128,112 +110,51 @@ class HttpResponse:
         return self
 
     def send(self, stream: socket.socket, cors_origin_header: str) -> None:
-        """
-        Rust: fn send(self, stream: &mut TcpStream, cors_origin_header: &str)
-                  -> Result<(), std::io::Error>
-
-        Python: raises OSError (the standard socket exception) on failure
-        instead of returning a Result — the natural Python idiom. Callers
-        that need Rust's explicit Result-handling style should wrap calls
-        in try/except OSError, mirroring `.map_err(...)` call sites in
-        main.rs.
-        """
+        """Write the full HTTP response to the socket. Raises OSError on failure."""
         cors_headers = f"{cors_origin_header}\r\n" if cors_origin_header else ""
         custom_headers = (
             "\r\n".join(self.custom_headers) + "\r\n" if self.custom_headers else ""
         )
-
         response = (
             f"HTTP/1.1 {self.status}\r\n"
             f"Content-Type: {self.content_type}\r\n"
             f"Content-Length: {len(self.body)}\r\n"
             f"{cors_headers}{custom_headers}\r\n"
         )
-
         stream.sendall(response.encode("utf-8"))
         stream.sendall(self.body)
-        # Rust's stream.flush() has no direct socket equivalent in Python
-        # (TCP sockets without internal buffering flush via sendall itself);
-        # omitted as a no-op equivalent.
 
 
 # ---------------------------------------------------------------------------
-# Receiving Messages via Telegram Bot API
+# Telegram notification
 # ---------------------------------------------------------------------------
 def send_telegram_notification(form_data: dict[str, str]) -> None:
     """
-    Sends form submission details to your personal Telegram inbox
-    via the Bot API — a plain HTTPS POST to api.telegram.org,
+    Sends a contact form submission to Telegram.
+    Delegates to TelegramBot in telegram_bot.py — all formatting
+    and API logic lives there, keeping this module free of duplication.
     """
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    from telegram_bot import TelegramBot
 
-    if not token or not chat_id:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set")
-
-    name = form_data.get("name", "Unknown")
-    email = form_data.get("email", "Unknown")
-    message = form_data.get("message", "")
-
-    # Checkboxes
-    services = [
-        field for field in ["frontend", "webDevelopment", "blender"]
-        if form_data.get(field) == "on"
-    ]
-    services_line = f"🛠 Services: {', '.join(services)}" if services else ""
-
-    text = (
-        f"📬 *New Contact Form Submission*\n\n"
-        f"👤 *Name:* {name}\n"
-        f"📧 *Email:* {email}\n"
-        f"💬 *Message:*\n{message}"
-        + (f"\n\n{services_line}" if services_line else "")
-    )
-
-    payload = json.dumps({
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "Markdown",
-    }).encode()
-
-    req = urllib.request.Request(
-        f"https://api.telegram.org/bot{token}/sendMessage",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            print(f"Telegram notification sent (status {resp.status})")
-    except urllib.error.HTTPError as e:
-        body = e.read().decode(errors="replace")
-        raise RuntimeError(f"Telegram API error {e.code}: {body}")
-    except urllib.error.URLError as e:
-        raise RuntimeError(f"Telegram request failed: {e.reason}")
-
-# ---------------------------------------------------------------------------
-# Colored text
-# ---------------------------------------------------------------------------
-def green(text: str, bold: bool) -> str:
-    if bold:
-        return f"\x1b[2;32m{text}\x1b[0m"
-    else:
-        return f"\x1b[32m{text}\x1b[0m"
-
-
-def red(text: str, bold: bool) -> str:
-    if bold:
-        return f"\x1b[2;31m{text}\x1b[0m"
-    else:
-        return f"\x1b[31m{text}\x1b[0m"
+    TelegramBot().send_form_submission(form_data)
 
 
 # ---------------------------------------------------------------------------
-# HELPER FUNCTIONS
+# Colored terminal output
+# ---------------------------------------------------------------------------
+def green(text: str, bold: bool = False) -> str:
+    return f"\x1b[2;32m{text}\x1b[0m" if bold else f"\x1b[32m{text}\x1b[0m"
+
+
+def red(text: str, bold: bool = False) -> str:
+    return f"\x1b[2;31m{text}\x1b[0m" if bold else f"\x1b[31m{text}\x1b[0m"
+
+
+# ---------------------------------------------------------------------------
+# Path and file helpers
 # ---------------------------------------------------------------------------
 def html_escape(input_str: str) -> str:
-    """HTML escaping function to prevent XSS. Order matches Rust exactly (chained .replace calls)."""
+    """Escapes HTML special characters to prevent XSS in rendered output."""
     return (
         input_str.replace("&", "&amp;")
         .replace("<", "&lt;")
@@ -245,54 +166,40 @@ def html_escape(input_str: str) -> str:
 
 
 def sanitize_path(path: str) -> str:
+    """
+    Strips the leading slash, URL-decodes, and removes any path traversal
+    segments (. and ..) before the path is joined onto a base directory.
+    """
     path_no_lead_slash = path[1:] if path.startswith("/") else path
     decoded = url_decode(path_no_lead_slash)
-    parts = [
-        part
-        for part in decoded.split("/")
-        if part != "" and part != "." and part != ".."
-    ]
+    parts = [p for p in decoded.split("/") if p and p != "." and p != ".."]
     return "/".join(parts)
 
 
-def is_safe_path(path: Path) -> bool:
+def is_safe_path(path: Path, base_dir: Path) -> bool:
+    """
+    Confirms that `path` resolves to somewhere inside `base_dir`,
+    preventing directory traversal even after sanitize_path runs.
 
-    def _dist_path() -> Optional[Path]:
-        try:
-            current = Path.cwd()
-        except OSError:
-            return None
-        parent = current.parent if current.parent != current else current
-        return parent / "dist"
-
+    Checks the parent directory when the file itself doesn't exist yet
+    (e.g. a request for a file that returns 404 — we still want to
+    confirm the attempted path wasn't escaping the base).
+    """
     try:
         canonical = path.resolve(strict=True)
-        dist_path = _dist_path()
-        if dist_path is None:
-            return False
-        try:
-            canonical_dist = dist_path.resolve(strict=True)
-            return _starts_with(canonical, canonical_dist)
-        except OSError:
-            return False
+        canonical_base = base_dir.resolve(strict=True)
+        return _starts_with(canonical, canonical_base)
     except OSError:
-        parent = path.parent
         try:
-            canonical_parent = parent.resolve(strict=True)
-            dist_path = _dist_path()
-            if dist_path is None:
-                return False
-            try:
-                canonical_dist = dist_path.resolve(strict=True)
-                return _starts_with(canonical_parent, canonical_dist)
-            except OSError:
-                return False
+            canonical_parent = path.parent.resolve(strict=True)
+            canonical_base = base_dir.resolve(strict=True)
+            return _starts_with(canonical_parent, canonical_base)
         except OSError:
             return False
 
 
 def _starts_with(path: Path, prefix: Path) -> bool:
-    """Replica of Rust's PathBuf::starts_with (component-wise prefix check)."""
+    """Component-wise prefix check — avoids false positives from string prefix matching."""
     try:
         path.relative_to(prefix)
         return True
@@ -328,28 +235,36 @@ def get_mime_type(path: Path) -> str:
         "zip": "application/zip",
         "txt": "text/plain",
     }
-    return mime_map.get(ext, "application/octet-stream") if ext else "application/octet-stream"
+    return (
+        mime_map.get(ext, "application/octet-stream")
+        if ext
+        else "application/octet-stream"
+    )
 
 
+# ---------------------------------------------------------------------------
+# Form body parsers
+# ---------------------------------------------------------------------------
 def parse_multipart_data(body: str) -> dict[str, str]:
     form_data: dict[str, str] = {}
-    parts = body.split("--")
-
-    for part in parts:
-        if "Content-Disposition: form-data" in part:
-            name_marker = 'name="'
-            name_start_idx = part.find(name_marker)
-            if name_start_idx != -1:
-                name_start = name_start_idx + len(name_marker)
-                name_end = part[name_start:].find('"')
-                if name_end != -1:
-                    field_name = part[name_start:name_start + name_end]
-                    value_start_idx = part.find("\r\n\r\n")
-                    if value_start_idx != -1:
-                        value_start = value_start_idx + 4
-                        field_value = part[value_start:].strip()
-                        if field_value != "":
-                            form_data[field_name] = field_value
+    for part in body.split("--"):
+        if "Content-Disposition: form-data" not in part:
+            continue
+        name_marker = 'name="'
+        name_start_idx = part.find(name_marker)
+        if name_start_idx == -1:
+            continue
+        name_start = name_start_idx + len(name_marker)
+        name_end = part[name_start:].find('"')
+        if name_end == -1:
+            continue
+        field_name = part[name_start : name_start + name_end]
+        value_start_idx = part.find("\r\n\r\n")
+        if value_start_idx == -1:
+            continue
+        field_value = part[value_start_idx + 4 :].strip()
+        if field_value:
+            form_data[field_name] = field_value
     return form_data
 
 
@@ -357,47 +272,43 @@ def parse_form_data(body: str) -> dict[str, str]:
     form_data: dict[str, str] = {}
     for pair in body.split("&"):
         if "=" in pair:
-            key, value = pair.split("=", 1)  # Rust's split_once -> split with maxsplit=1
-            decoded_key = url_decode(key)
-            decoded_value = url_decode(value)
-            form_data[decoded_key] = decoded_value
+            key, value = pair.split("=", 1)
+            form_data[url_decode(key)] = url_decode(value)
     return form_data
 
 
 def url_decode(s: str) -> str:
-    result_chars: list[str] = []
+    """Decodes percent-encoded characters and converts '+' to spaces."""
+    result: list[str] = []
     chars = list(s)
     i = 0
-    n = len(chars)
-
-    while i < n:
+    while i < len(chars):
         ch = chars[i]
-        if ch == "%":
-            hex_str = "".join(chars[i + 1:i + 3])
-            if len(hex_str) == 2:
-                try:
-                    byte = int(hex_str, 16)
-                    result_chars.append(chr(byte))
-                except ValueError:
-                    pass  # Rust: if let Ok(byte) = ... else silently drop
+        if ch == "%" and i + 2 < len(chars):
+            hex_str = "".join(chars[i + 1 : i + 3])
+            try:
+                result.append(chr(int(hex_str, 16)))
+            except ValueError:
+                pass  # malformed percent sequence — silently skip
             i += 3
         elif ch == "+":
-            result_chars.append(" ")
+            result.append(" ")
             i += 1
         else:
-            result_chars.append(ch)
+            result.append(ch)
             i += 1
-
-    return "".join(result_chars)
-
-
-def sanitize_email_content(input_str: str) -> str:
-    """Sanitize email content to prevent header injection."""
-    return "".join(c for c in input_str if c not in ("\r", "\n", "\0"))
+    return "".join(result)
 
 
+# ---------------------------------------------------------------------------
+# Security helpers
+# ---------------------------------------------------------------------------
 def contains_potential_xss(input_str: str) -> bool:
-    """Helper function to detect potential XSS attempts."""
+    """
+    Detects common XSS attack patterns before any content reaches a
+    response. Covers script tags, event handlers, data URIs, and
+    CSS-based injection vectors.
+    """
     input_lower = input_str.lower()
     xss_patterns = [
         "<script",
