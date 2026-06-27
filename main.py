@@ -817,7 +817,7 @@ def _send_page_response(
             background: #101010; width: 500px; border-radius: 15px;
             padding: 2rem 3rem; display: flex; flex-direction: column; gap: 1.5rem;
         }}
-        h1 {{ text-align: center; }}
+        
         .message {{
             border-left: 4px solid {"#51cf66" if page == "success" else "#fa4646"};
             padding: 1rem; border-radius: 5px;

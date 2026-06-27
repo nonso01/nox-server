@@ -14,7 +14,7 @@ MAX_FORM_DATA_LENGTH: int = 10 * ONE_KILO_BYTE
 
 WINDOW_LIMIT_MINS: int = 60  # 1 hour = 60 min
 CORS_CONFIG_MAX_AGE: int = 86400
-CORS_CONFIG_MIN_AGE: int = CORS_CONFIG_MAX_AGE // 24  # Rust integer division -> //
+CORS_CONFIG_MIN_AGE: int = CORS_CONFIG_MAX_AGE // 24
 MAX_REQUEST_LINE_SIZE: int = 8192
 MAX_HEADER_LINE_SIZE: int = 8192
 
@@ -25,7 +25,6 @@ RFC_5321_MAX_DOMAIN_PART_LENGTH: int = 253
 
 @dataclass(frozen=True)
 class FieldConstraint:
-
     name: str
     max_length: int
     required: bool
