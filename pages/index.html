@@ -82,7 +82,7 @@
       }
 
       h1 {
-        width: max-content;
+        /* width: max-content; */
         font-size: clamp(2.5rem, 5vw + 1rem, 7.5rem);
         margin-block: 2%;
         line-height: 1.1;
@@ -330,7 +330,49 @@
 
       @media screen and (width <= 768px) {
         html {
+          text-wrap: pretty;
+        }
+        header {
+          display: flex;
+          flex-direction: column;
+          justify-content: space-evenly;
+          min-height: 220px;
+          p {
+            width: 100%;
+          }
+        }
+
+        main {
+          display: flex;
+          flex-direction: column;
+        }
+        #about-skill-project {
+          width: 100%;
+          min-height: 620px;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-evenly;
+
+          .project {
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(4, 1fr);
+          }
+        }
+        #contact {
+          width: 100%;
+          min-height: 530px;
+          form {
+            width: 100%;
+          }
+        }
+      }
+
+      @media screen and (width <= 480px) {
+        html {
           font-size: 15px;
+        }
+        #about-skill-project {
+          min-height: 750px;
         }
       }
 
@@ -359,8 +401,8 @@
       </p>
     </header>
 
-    <main class="flex flex-justify-between">
-      <section id="about-skill-project" class="debug green">
+    <main class="flex flex-justify-between debug">
+      <section id="about-skill-project">
         <div class="container about cabin flex flex-center">
           <p>
             I am driven by the challenge of transforming complex logic into
@@ -568,7 +610,7 @@
         </div>
       </section>
 
-      <section id="contact" class="cabin flex flex-column debug">
+      <section id="contact" class="cabin flex flex-column">
         <h2 class="bricolage">Contact</h2>
         <form
           method="POST"
@@ -651,7 +693,7 @@
           </div>
         </form>
 
-        <div class="socials flex debug">
+        <div class="socials flex">
           <a
             href="https://x.com/nonso0X"
             target="_blank"
